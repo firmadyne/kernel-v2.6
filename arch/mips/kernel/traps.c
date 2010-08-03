@@ -25,6 +25,8 @@
 #include <linux/ptrace.h>
 #include <linux/kgdb.h>
 #include <linux/kdebug.h>
+#include <linux/kprobes.h>
+#include <linux/notifier.h>
 
 #include <asm/bootinfo.h>
 #include <asm/branch.h>
@@ -329,7 +331,7 @@ void show_regs(struct pt_regs *regs)
 	__show_regs((struct pt_regs *)regs);
 }
 
-void show_registers(const struct pt_regs *regs)
+void show_registers(struct pt_regs *regs)
 {
 	const int field = 2 * sizeof(unsigned long);
 
@@ -353,7 +355,7 @@ void show_registers(const struct pt_regs *regs)
 
 static DEFINE_SPINLOCK(die_lock);
 
-void __noreturn die(const char * str, const struct pt_regs * regs)
+void __noreturn die(const char * str, struct pt_regs * regs)
 {
 	static int die_counter;
 #ifdef CONFIG_MIPS_MT_SMTC
@@ -765,6 +767,25 @@ asmlinkage void do_bp(struct pt_regs *regs)
 	bcode = ((opcode >> 6) & ((1 << 20) - 1));
 	if (bcode >= (1 << 10))
 		bcode >>= 10;
+
+	/*
+	 * notify the kprobe handlers, if instruction is likely to
+	 * pertain to them.
+	 */
+	switch (bcode) {
+	case BRK_KPROBE_BP:
+		if (notify_die(DIE_BREAK, "debug", regs, bcode, 0, 0) == NOTIFY_STOP)
+			return;
+		else
+			break;
+	case BRK_KPROBE_SSTEPBP:
+		if (notify_die(DIE_SSTEPBP, "single_step", regs, bcode, 0, 0) == NOTIFY_STOP)
+			return;
+		else
+			break;
+	default:
+		break;
+	}
 
 	do_trap_or_bp(regs, bcode, "Break");
 	return;
