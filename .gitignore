@@ -78,3 +78,5 @@ GTAGS
 *.orig
 *~
 \#*#
+
+build
